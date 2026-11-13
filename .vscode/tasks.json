@@ -14,6 +14,24 @@
       "problemMatcher": []
     },
     {
+      "label": "Lua conformance: run tests with coverage",
+      "detail": "Run the Lua protocol-conformance test suite (tests/) with a coverage report.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "windows": {
+        "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+      },
+      "args": [
+        "-m",
+        "pytest",
+        "tests/",
+        "--cov=midea_lua_conformance",
+        "--cov-report=term-missing:skip-covered"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
       "label": "Lua conformance: regenerate reports",
       "detail": "Regenerate reports/MAPPING.md, reports/REPORT.md and reports/DISCREPANCIES.md.",
       "type": "shell",
