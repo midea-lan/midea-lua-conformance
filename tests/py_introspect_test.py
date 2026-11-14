@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import ast
+import sys
+from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
 
 from midea_lua_conformance.ir import DecodeField
-from midea_lua_conformance.py_introspect import _parser_field, introspect_device
+from midea_lua_conformance.py_introspect import (
+    _extract_decode_fields_from_ast,
+    _parser_field,
+    introspect_device,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_introspect_e1_decode_fields() -> None:
@@ -21,6 +31,20 @@ def test_introspect_e1_decode_fields() -> None:
     assert by_name["child_lock"].signature() == (5, 0x10, 0)
     assert by_name["temperature"].signature() == (11, 0xFF, 0)
     assert by_name["door"].boolean is True
+
+
+@pytest.mark.parametrize(
+    ("name", "found"),
+    [
+        pytest.param("status", True, id="exact"),
+        pytest.param("STATUS", True, id="case_insensitive"),
+        pytest.param("no_such_field", False, id="unknown"),
+    ],
+)
+def test_decode_field_lookup(name: str, found: bool) -> None:
+    """Decode fields are looked up by name, ignoring case."""
+    field = introspect_device("e1").decode_field(name)
+    assert (field is not None) is found
 
 
 def test_introspect_e1_enums_from_class_vars() -> None:
@@ -102,6 +126,60 @@ def test_non_parser_call_is_ignored() -> None:
     call = ast.parse("SomethingElse('power', 1)", mode="eval").body
     assert isinstance(call, ast.Call)
     assert _parser_field(call) is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("IntParser(attribute_name, 1)", id="name_not_a_literal"),
+        pytest.param("IntParser('target', -offset)", id="byte_not_a_literal"),
+    ],
+)
+def test_parser_without_literal_name_or_byte_is_ignored(source: str) -> None:
+    """A field is only lowered when its name and byte are known statically."""
+    call = ast.parse(source, mode="eval").body
+    assert isinstance(call, ast.Call)
+    assert _parser_field(call) is None
+
+
+def test_unprintable_body_read_has_no_transform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A body read whose expression cannot be printed still yields its field."""
+    message_py = tmp_path / "message.py"
+    message_py.write_text(
+        "class MessageBody:\n"
+        "    def __init__(self, body):\n"
+        "        self.power = body[3] & 0x01\n",
+        encoding="utf-8",
+    )
+
+    def _fail(node: ast.AST) -> str:
+        raise ValueError(node)
+
+    monkeypatch.setattr(ast, "unparse", _fail)
+
+    [field] = _extract_decode_fields_from_ast(message_py)
+    assert field.signature() == (3, 0x01, 0)
+    assert field.transform is None
+
+
+def test_introspect_package_without_device_type_or_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A device package without a DeviceType member or message module is noted."""
+    monkeypatch.setitem(
+        sys.modules,
+        "midealocal.devices.zz",
+        ModuleType("midealocal.devices.zz"),
+    )
+
+    py = introspect_device("zz")
+    assert py.device_type is None
+    assert py.decode_fields == []
+    assert py.notes[0] == "no DeviceType member for 'zz'"
+    assert py.notes[1].startswith("message import failed: ")
 
 
 def test_introspect_parser_based_package() -> None:
