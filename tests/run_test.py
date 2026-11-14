@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
+from midea_lua_conformance import run
 from midea_lua_conformance.run import iter_pairs, main
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_iter_pairs_rejects_negative_limit() -> None:
@@ -24,3 +30,25 @@ def test_cli_rejects_negative_limit(capsys: pytest.CaptureFixture[str]) -> None:
         main(["--limit-per-dir", "-1"])
     assert exc_info.value.code == 2
     assert "must be >= 0" in capsys.readouterr().err
+
+
+def test_cli_writes_reports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The CLI writes the three reports and summarises the run."""
+    monkeypatch.setattr(run, "REPORTS_DIR", tmp_path)
+
+    assert main(["--limit-per-dir", "1"]) == 0
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "DISCREPANCIES.md",
+        "MAPPING.md",
+        "REPORT.md",
+    ]
+    comparisons = len(iter_pairs(limit_per_dir=1))
+    assert capsys.readouterr().out.startswith(
+        "wrote MAPPING.md, REPORT.md and DISCREPANCIES.md "
+        f"({comparisons} comparisons: ",
+    )
