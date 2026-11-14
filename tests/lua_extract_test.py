@@ -98,13 +98,33 @@ def test_unusual_file_degrades_without_raising() -> None:
         "not lua at all !!!",
         "function jsonToData(x)\n  -- no end here",
         "local X = 0x",
+        (
+            "function updateGlobalPropertyValueByByte(messageBytes)\n"
+            "    powerValue = bit.band(messageBytes[1],\nend"
+        ),
     ],
-    ids=["empty", "garbage", "truncated_func", "bad_hex"],
+    ids=["empty", "garbage", "truncated_func", "bad_hex", "unclosed_paren"],
 )
 def test_malformed_sources_do_not_raise(source: str) -> None:
     """The extractor must never raise on malformed input."""
     defn = extract_from_source(source, "malformed.lua")
     assert defn.source == "malformed.lua"
+
+
+def test_leading_zero_number_is_skipped() -> None:
+    """``010`` is not a valid integer literal, so the constant is dropped."""
+    defn = extract_from_source("local LEGACY = 010\nlocal VALID = 10\n", "x.lua")
+    assert "LEGACY" not in defn.constants
+    assert defn.constants["VALID"].value == 10
+
+
+def test_file_outside_repo_keeps_its_path(tmp_path: Path) -> None:
+    """A file outside the repository is reported by its own path."""
+    lua = tmp_path / "outside.lua"
+    lua.write_text("local BYTE_DEVICE_TYPE = 0xAC\n", encoding="utf-8")
+    defn = extract_from_file(lua)
+    assert defn.source == str(lua)
+    assert defn.device_type == 0xAC
 
 
 def test_real_e1_file_smoke() -> None:
