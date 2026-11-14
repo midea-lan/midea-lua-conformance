@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from midea_lua_conformance.mapping import DeviceMapping, MatchStatus, build_mapping
+from midea_lua_conformance import mapping
+from midea_lua_conformance.mapping import (
+    DeviceMapping,
+    MatchStatus,
+    build_mapping,
+    matched_packages,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(scope="module")
@@ -55,3 +66,32 @@ def test_e1_maps_cleanly(rows: list[DeviceMapping]) -> None:
     assert e1.status is MatchStatus.MATCHED
     assert e1.device_type == 0xE1
     assert any(f.startswith("T_0000_E1_") for f in e1.lua_files)
+
+
+def test_matched_packages(rows: list[DeviceMapping]) -> None:
+    """Only the MATCHED keys are returned, in mapping order."""
+    assert matched_packages() == [
+        r.key for r in rows if r.status is MatchStatus.MATCHED
+    ]
+
+
+def test_device_type_byte_disagreement_is_recorded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Lua BYTE_DEVICE_TYPE that disagrees with DeviceType is surfaced."""
+    lua_dir = tmp_path / "e1"
+    lua_dir.mkdir()
+    (lua_dir / "T_0000_E1_1.lua").write_text(
+        "local BYTE_DEVICE_TYPE = 0xE2\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mapping, "LUA_ROOT", tmp_path)
+
+    e1 = next(r for r in build_mapping() if r.key == "e1")
+    assert e1.evidence == [
+        "CONFLICT: lua BYTE_DEVICE_TYPE=0xE2 != DeviceType.E1=0xE1",
+        "filename type token 'e1' == DeviceType byte 0xE1",
+    ]
+    # the filename token still corroborates the pairing
+    assert e1.status is MatchStatus.MATCHED
