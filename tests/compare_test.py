@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from midea_lua_conformance.compare import Verdict, compare, normalize_name
+from midea_lua_conformance.compare import (
+    Comparison,
+    Finding,
+    Verdict,
+    compare,
+    normalize_name,
+)
 from midea_lua_conformance.ir import (
     Constant,
     DecodeField,
@@ -187,3 +193,29 @@ def test_decode_field_prefers_the_matching_declaration() -> None:
     result = compare(lua, py)
     field = next(f for f in result.findings if f.name == "power")
     assert field.verdict is Verdict.MATCH
+
+
+def test_zero_mask_is_never_right_align_equivalent() -> None:
+    """A zero mask selects no bits, so a shift difference stays DIFFERENT."""
+    lua = _lua(
+        decode_fields=[DecodeField("modeValue", 2, 0x00, 0, source=SourceRef("x", 1))],
+    )
+    py = _py(decode_fields=[DecodeField("mode", 2, 0x00, 1)])
+    result = compare(lua, py)
+    field = next(f for f in result.findings if f.name == "mode")
+    assert field.verdict is Verdict.DIFFERENT
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "expected"),
+    [
+        pytest.param([], True, id="no_findings"),
+        pytest.param([Verdict.MATCH, Verdict.UNKNOWN], True, id="match_and_unknown"),
+        pytest.param([Verdict.MATCH, Verdict.MISSING], False, id="missing"),
+        pytest.param([Verdict.DIFFERENT], False, id="different"),
+    ],
+)
+def test_comparison_ok(verdicts: list[Verdict], expected: bool) -> None:
+    """Only MISSING and DIFFERENT findings make a comparison not ok."""
+    findings = [Finding(verdict, "enum", "mode", "") for verdict in verdicts]
+    assert Comparison("lua/ac/a.lua", "ac", findings).ok is expected
