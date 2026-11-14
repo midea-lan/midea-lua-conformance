@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import runpy
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
@@ -13,12 +13,12 @@ from midea_lua_conformance import precommit_check
 from midea_lua_conformance.mapping import DEVICES_ROOT, LUA_ROOT
 from midea_lua_conformance.precommit_check import main
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 _REPO_ROOT = LUA_ROOT.parent
-_E1_LUA = sorted(f"lua/e1/{p.name}" for p in (LUA_ROOT / "e1").glob("*.lua"))
-_AC_LUA = "lua/ac/T_0000_AC_00000Q11_2023072401.lua"
+# Reports name lua files with the platform path separator.
+_E1_LUA = sorted(
+    str(Path("lua", "e1", p.name)) for p in (LUA_ROOT / "e1").glob("*.lua")
+)
+_AC_LUA = str(Path("lua", "ac", "T_0000_AC_00000Q11_2023072401.lua"))
 _COMPARED = re.compile(r"^\[lua-conformance\] (\S+) vs (\S+): ", re.MULTILINE)
 
 
